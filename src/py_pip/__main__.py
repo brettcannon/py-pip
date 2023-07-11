@@ -4,7 +4,6 @@ from . import download
 
 
 def main():
-    print("Downloading", download.PYZ_URL)
     pyz_bytes = download.download_pyz()
     cache_dir = xdg.xdg_cache_home() / "py-pip"
     cache_dir.mkdir(parents=True, exist_ok=True)

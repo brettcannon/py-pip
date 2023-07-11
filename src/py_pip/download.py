@@ -6,6 +6,7 @@ PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 
 
 def download_pyz() -> bytes:
+    print("Downloading", PYZ_URL)
     with httpx.stream("GET", PYZ_URL) as response:
         content = []
         total = int(response.headers["Content-Length"])
