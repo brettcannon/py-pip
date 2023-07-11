@@ -1,6 +1,8 @@
-import httpx
 import os
-import rich.progress
+
+
+import httpx
+from tqdm import tqdm
 import xdg
 
 
@@ -10,20 +12,21 @@ PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 def download_pyz() -> bytes:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     with httpx.stream("GET", PYZ_URL) as response:
-        print("Downloading", PYZ_URL)
         content = []
         total = int(response.headers["Content-Length"])
 
-        with rich.progress.Progress(
-            "[progress.percentage]{task.percentage:>3.0f}%",
-            rich.progress.BarColumn(bar_width=None),
-            rich.progress.DownloadColumn(),
-            rich.progress.TransferSpeedColumn(),
+        with tqdm(
+            desc=f"Downloading {PYZ_URL}",
+            total=total,
+            unit_scale=True,
+            unit_divisor=1024,
+            unit="B",
         ) as progress:
-            download_task = progress.add_task("Download", total=total)
+            num_bytes_downloaded = response.num_bytes_downloaded
             for chunk in response.iter_bytes():
                 content.append(chunk)
-                progress.update(download_task, completed=response.num_bytes_downloaded)
+                progress.update(response.num_bytes_downloaded - num_bytes_downloaded)
+                num_bytes_downloaded = response.num_bytes_downloaded
     response.raise_for_status()
     return b"".join(content)
 
