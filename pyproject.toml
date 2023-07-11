@@ -1,0 +1,7 @@
+[project]
+name = "py-pip"
+version = "2023.0.0"
+requires-python = ">=3.8"
+dependencies = ["httpx~=0.24.1", "xdg~=6.0.0", "rich~=13.4.2"]
+
+classifiers = ["Private :: Do Not Upload"]
