@@ -2,11 +2,13 @@
 name = "py-pip"
 version = "2023.0.0"
 requires-python = ">=3.8"
-dependencies = ["httpx", "xdg", "tqdm"]
+dependencies = ["httpx", "xdg", "rich"]
 
 classifiers = ["Private :: Do Not Upload"]
 
 
 [tool.pip-tools]
+# pip-args doesn't work.
 generate-hashes = true
 resolver = "backtracking"
+output-file = "requirements.txt"
