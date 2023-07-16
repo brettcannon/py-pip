@@ -11,12 +11,13 @@ PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 
 def download_pyz() -> bytes:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
-    with httpx.stream("GET", PYZ_URL) as response:
+    http_verb = "GET"
+    with httpx.stream(http_verb, PYZ_URL) as response:
         content = []
         total = int(response.headers["Content-Length"])
 
         with tqdm(
-            desc=f"Downloading {PYZ_URL}",
+            desc=f"{http_verb} {PYZ_URL}",
             total=total,
             unit_scale=True,
             unit_divisor=1024,
