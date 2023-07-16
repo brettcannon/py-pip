@@ -2,6 +2,11 @@
 name = "py-pip"
 version = "2023.0.0"
 requires-python = ">=3.8"
-dependencies = ["httpx~=0.24.1", "xdg~=6.0.0", "tqdm~=4.65.0"]
+dependencies = ["httpx", "xdg", "tqdm"]
 
 classifiers = ["Private :: Do Not Upload"]
+
+
+[tool.pip-tools]
+generate-hashes = true
+resolver = "backtracking"
