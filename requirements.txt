@@ -37,6 +37,9 @@ markdown-it-py==3.0.0 \
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
     # via markdown-it-py
+microvenv==2023.2.0 \
+    --hash=sha256:5b46296d6a65992946da504bd9e724a5becf5c256091f2f9383e5b4e9f567f23
+    # via py-pip (pyproject.toml)
 pygments==2.15.1 \
     --hash=sha256:db2db3deb4b4179f399a09054b023b6a586b76499d36965813c71aa8ed7b5fd1
     # via rich

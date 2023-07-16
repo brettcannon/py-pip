@@ -2,7 +2,7 @@
 name = "py-pip"
 version = "2023.0.0"
 requires-python = ">=3.8"
-dependencies = ["httpx", "xdg", "rich"]
+dependencies = ["httpx", "microvenv", "rich", "xdg"]
 
 classifiers = ["Private :: Do Not Upload"]
 

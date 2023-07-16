@@ -2,7 +2,6 @@ import os
 
 
 import httpx
-import rich.console
 import rich.progress
 import xdg
 
@@ -40,7 +39,5 @@ def save_pyz(data: bytes) -> str:
     pyz_path = cache_dir / "pip.pyz"
     pyz_path.write_bytes(data)
     print("Saved to", pyz_path.parent)
-    console = rich.console.Console()
-    print()
-    console.rule("pip output")
+
     return os.fsdecode(pyz_path)
