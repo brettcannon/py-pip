@@ -1,7 +1,7 @@
 import os.path
 import pathlib
 import shutil
-import tomllib
+import tomllib  # type: ignore
 
 import nox  # type: ignore
 
@@ -51,6 +51,9 @@ def install_deps(session, target, editable=False):
     install_code_args.append(".")
 
     pip(session, install_code_args)
+
+    for dist_info in target.glob("*.dist-info"):
+        shutil.rmtree(dist_info)
 
     # Strip unnecessary Rich dependencies.
     projects = ["markdown_it", "mdurl", "pygments"]
