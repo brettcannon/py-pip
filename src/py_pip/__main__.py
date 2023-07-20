@@ -8,6 +8,28 @@ from . import download
 from . import run
 
 
+def select_dir() -> pathlib.Path:
+    cwd = pathlib.Path.cwd()
+    locations = [cwd, *cwd.parents]
+    for path in locations:
+        pyproject_toml = path / "pyproject.toml"
+        if pyproject_toml.exists():
+            break
+    else:
+        print("No pyproject.toml found.")
+        print("Where do you want to save the virtual environment?")
+        for option, path in enumerate(locations, start=1):
+            print(f"{option}. {path}")
+        selected_location = int(
+            rich.prompt.IntPrompt.ask(
+                "Select a location",
+                choices=list(map(str, range(1, len(locations) + 1))),
+                default="1",
+            )
+        )
+        path = pathlib.Path(locations[selected_location - 1])
+
+
 def main():
     pyz_path = download.pyz_path()
     if pyz_path.exists():
@@ -17,9 +39,11 @@ def main():
         download.save_pyz(pyz_path, pyz_bytes)
         print("Saved to", pyz_path.parent)
 
-    py_path = (
-        run.create_venv() if not run.in_virtual_env() else pathlib.Path(sys.executable)
-    )
+    if run.in_virtual_env():
+        py_path = pathlib.Path(sys.executable)
+    else:
+        workspace_path = select_dir()
+        py_path = run.create_venv(workspace_path)
 
     console = rich.console.Console()
     console.rule("pip output")
