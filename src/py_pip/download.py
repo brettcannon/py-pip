@@ -1,5 +1,5 @@
 import os
-
+import pathlib
 
 import httpx
 import rich.progress
@@ -7,6 +7,11 @@ import xdg
 
 
 PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
+
+
+def pyz_path() -> pathlib.Path:
+    cache_dir = xdg.xdg_cache_home() / "py-pip"
+    return cache_dir / "pip.pyz"
 
 
 def download_pyz() -> bytes:
@@ -33,11 +38,7 @@ def download_pyz() -> bytes:
     return b"".join(content)
 
 
-def save_pyz(data: bytes) -> str:
-    cache_dir = xdg.xdg_cache_home() / "py-pip"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    pyz_path = cache_dir / "pip.pyz"
-    pyz_path.write_bytes(data)
-    print("Saved to", pyz_path.parent)
-
-    return os.fsdecode(pyz_path)
+def save_pyz(path: pathlib.Path, data: bytes) -> None:
+    if not path.parent.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)

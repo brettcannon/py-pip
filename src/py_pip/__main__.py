@@ -1,3 +1,4 @@
+import pathlib
 import sys
 
 import rich.console
@@ -8,14 +9,22 @@ from . import run
 
 
 def main():
-    pyz_bytes = download.download_pyz()
-    pyz = download.save_pyz(pyz_bytes)
+    pyz_path = download.pyz_path()
+    if pyz_path.exists():
+        print(f"Using {pyz_path}")
+    else:
+        pyz_bytes = download.download_pyz()
+        download.save_pyz(pyz_path, pyz_bytes)
+        print("Saved to", pyz_path.parent)
 
-    print()
+    py_path = (
+        run.create_venv() if not run.in_virtual_env() else pathlib.Path(sys.executable)
+    )
+
     console = rich.console.Console()
     console.rule("pip output")
 
-    sys.exit(run.pip(pyz, args=sys.argv[1:]))
+    sys.exit(run.pip(py_path, pyz_path, args=sys.argv[1:]))
 
 
 if __name__ == "__main__":
