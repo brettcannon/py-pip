@@ -1,7 +1,7 @@
-import os.path
 import pathlib
 import shutil
 import tomllib  # type: ignore
+import zipapp
 
 import nox  # type: ignore
 
@@ -26,7 +26,7 @@ def pip(session, args):
 def install_deps(session, target, editable=False):
     """Install from the lock file into 'target'.
 
-    If editable is true
+    If editable is true, then install the source code as editable.
     """
     requirements_args = [
         "install",
@@ -52,8 +52,10 @@ def install_deps(session, target, editable=False):
 
     pip(session, install_code_args)
 
-    for dist_info in target.glob("*.dist-info"):
-        shutil.rmtree(dist_info)
+    for unneeded_dir in ("lib", "bin"):
+        path = target / unneeded_dir
+        if path.exists():
+            shutil.rmtree(path)
 
     # Strip unnecessary Rich dependencies.
     projects = ["markdown_it", "mdurl", "pygments"]
@@ -78,16 +80,25 @@ def venv(session):
 def build(session):
     """Build `py-pip.pyz`."""
     build_path = WORKSPACE / "build"
-    lib_path = WORKSPACE / "lib"
     dist_path = WORKSPACE / "dist"
-    for path in (build_path, lib_path, dist_path):
+    for path in (build_path, dist_path):
         if path.exists():
             shutil.rmtree(path)
+        path.mkdir()
+
     install_deps(session, build_path)
-    shutil.rmtree(build_path / "bin")
+    next(build_path.glob("bdist.*")).rmdir()
+    # Keep the .dist-info directories for the licenses.
+    # XDG places its license in the wrong place (and with a misspelling).
+    (build_path / "LICENCE").rename(
+        next(build_path.glob("xdg-*.dist-info")) / "LICENSE"
+    )
+    shutil.copy(WORKSPACE / "LICENSE", build_path)
     shutil.copy(WORKSPACE / "THIRD_PARTY_NOTICES.md", build_path)
 
-    shutil.make_archive(dist_path / "py-pip", "zip", build_path)
+    zipapp.create_archive(
+        build_path, dist_path / "py-pip.pyz", interpreter="/usr/bin/env py"
+    )
 
 
 @nox.session(python=MIN_PYTHON_VERSION)
