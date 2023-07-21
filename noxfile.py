@@ -106,7 +106,7 @@ def lock(session):
     """Update the lock file (and recreate the virtual environment)."""
     if LOCK_FILE.exists():
         LOCK_FILE.unlink()
-    session.install("pip-tools")
+    session.install("pip-tools>=7.1.0")
     # `--pip-args` doesn't work when specified in `[tool.pip-tools]`.
     session.run(
         "pip-compile",
