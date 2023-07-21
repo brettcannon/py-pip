@@ -9,7 +9,7 @@ classifiers = ["Private :: Do Not Upload"]
 
 
 [tool.pip-tools]
-# pip-args doesn't work.
+pip-args = "--only-binary :all:"
 generate-hashes = true
 resolver = "backtracking"
 output-file = "requirements.txt"

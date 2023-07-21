@@ -110,8 +110,6 @@ def lock(session):
     # `--pip-args` doesn't work when specified in `[tool.pip-tools]`.
     session.run(
         "pip-compile",
-        "--pip-args",
-        "--only-binary :all:",
         "--config",
         WORKSPACE / "pyproject.toml",
         external=True,
