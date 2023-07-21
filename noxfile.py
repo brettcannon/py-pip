@@ -93,8 +93,8 @@ def build(session):
     (build_path / "LICENCE").rename(
         next(build_path.glob("xdg-*.dist-info")) / "LICENSE"
     )
-    shutil.copy(WORKSPACE / "LICENSE", build_path)
-    shutil.copy(WORKSPACE / "THIRD_PARTY_NOTICES.md", build_path)
+    shutil.copy(WORKSPACE / "LICENSE.md", build_path)
+    shutil.copy(WORKSPACE / "NOTICE.md", build_path)
 
     zipapp.create_archive(
         build_path, dist_path / "py-pip.pyz", interpreter="/usr/bin/env py"
