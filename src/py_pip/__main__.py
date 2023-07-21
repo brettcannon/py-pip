@@ -28,6 +28,7 @@ def select_dir() -> pathlib.Path:
             )
         )
         path = pathlib.Path(locations[selected_location - 1])
+    return path
 
 
 def main():
@@ -43,6 +44,7 @@ def main():
         py_path = pathlib.Path(sys.executable)
     else:
         workspace_path = select_dir()
+        print("Creating virtual environment in", workspace_path)
         py_path = run.create_venv(workspace_path)
 
     console = rich.console.Console()
