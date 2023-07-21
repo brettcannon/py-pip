@@ -32,12 +32,12 @@ def select_dir() -> pathlib.Path:
 
 def main():
     pyz_path = download.pyz_path()
-    if pyz_path.exists():
-        print(f"Using {pyz_path}")
+    pyz_bytes = download.download_pyz()
+    if not pyz_bytes:
+        print("Reusing", pyz_path)
     else:
-        pyz_bytes = download.download_pyz()
         download.save_pyz(pyz_path, pyz_bytes)
-        print("Saved to", pyz_path.parent)
+        run.pip(sys.executable, pyz_path, args=["--version"])
 
     if run.in_virtual_env():
         py_path = pathlib.Path(sys.executable)
