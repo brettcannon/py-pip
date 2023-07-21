@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 
@@ -7,11 +8,11 @@ import xdg
 
 
 PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
+CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
 
 
 def pyz_path() -> pathlib.Path:
-    cache_dir = xdg.xdg_cache_home() / "py-pip"
-    return cache_dir / "pip.pyz"
+    return CACHE_DIR / "pip.pyz"
 
 
 def download_pyz() -> bytes:
@@ -19,6 +20,9 @@ def download_pyz() -> bytes:
     http_verb = "GET"
     with httpx.stream(http_verb, PYZ_URL) as response:
         response.raise_for_status()
+
+        headers_path = CACHE_DIR / "response_headers.json"
+        headers_path.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
 
         content = []
         total = int(response.headers["Content-Length"])
