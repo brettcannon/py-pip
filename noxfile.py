@@ -97,7 +97,10 @@ def build(session):
     shutil.copy(WORKSPACE / "NOTICE.md", build_path)
 
     zipapp.create_archive(
-        build_path, dist_path / "py-pip.pyz", interpreter="/usr/bin/env py"
+        build_path,
+        dist_path / "py-pip.pyz",
+        interpreter="/usr/bin/env py",
+        main="py_pip:main",
     )
 
 

@@ -1,11 +1,15 @@
 import json
 import os
 import pathlib
-import shutil
-from typing import Optional
+import subprocess
+import sys
+from typing import List, Optional
 
 import httpx
+import microvenv
+import rich.console
 import rich.progress
+import rich.prompt
 import xdg
 
 
@@ -13,7 +17,7 @@ PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
 
 
-def pyz_path() -> pathlib.Path:
+def calc_pyz_path() -> pathlib.Path:
     return CACHE_DIR / "pip.pyz"
 
 
@@ -61,3 +65,69 @@ def save_pyz(path: pathlib.Path, data: bytes) -> None:
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+
+
+def in_virtual_env() -> bool:
+    return sys.prefix != sys.base_prefix
+
+
+def create_venv(path: pathlib.Path) -> pathlib.Path:
+    microvenv.create(path / ".venv")
+    return path / ".venv" / "bin" / "python"
+
+
+def pip(py_path: pathlib.Path, pyz_path: pathlib.Path, args: List[str]) -> int:
+    args = ["--disable-pip-version-check", "--require-virtualenv", *args]
+    return subprocess.run(
+        [os.fsdecode(py_path), os.fsdecode(pyz_path), *args], check=False
+    ).returncode
+
+
+def select_dir() -> pathlib.Path:
+    cwd = pathlib.Path.cwd()
+    locations = [cwd, *cwd.parents]
+    for path in locations:
+        pyproject_toml = path / "pyproject.toml"
+        if pyproject_toml.exists():
+            break
+    else:
+        # TODO: error condition
+        print("No pyproject.toml found.")
+    return path
+
+
+def main():
+    pyz_path = calc_pyz_path()
+    # TODO: error condition
+    pyz_bytes = download_pyz()
+    if not pyz_bytes:
+        print("Reusing", pyz_path)
+    else:
+        save_pyz(pyz_path, pyz_bytes)
+        # TODO: error condition
+        pip(sys.executable, pyz_path, args=["--version"])
+
+    if in_virtual_env():
+        py_path = pathlib.Path(sys.executable)
+    else:
+        # TODO: error condition
+        workspace_path = select_dir()
+        print("Creating virtual environment in", workspace_path)
+        # TODO: error condition
+        py_path = create_venv(workspace_path)
+
+    console = rich.console.Console()
+    console.rule("pip output")
+
+    sys.exit(pip(py_path, pyz_path, args=sys.argv[1:]))
+
+    # Check if `.pyz` is cached.
+    # Download if necessary.
+    # Execute pip.
+    # Check/download a new pip.
+    # Show spinner if download isn't complete.
+    # If pip updated, print the new version.
+
+
+if __name__ == "__main__":
+    main()
