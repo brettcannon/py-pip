@@ -3,7 +3,7 @@ name = "py-pip"
 version = "2023.0.0"
 requires-python = ">=3.8"
 # xdg has been renamed to xdg-base-dirs, but it requires >= 3.10.
-dependencies = ["httpx", "microvenv", "rich", "xdg"]
+dependencies = ["httpx", "microvenv", "rich", "trio", "xdg"]
 
 classifiers = ["Private :: Do Not Upload"]
 

@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import pathlib
@@ -10,6 +11,7 @@ import microvenv
 import rich.console
 import rich.progress
 import rich.prompt
+import trio
 import xdg
 
 
@@ -55,7 +57,7 @@ def blocking_download() -> None:
     CACHED_PYZ.write_bytes(b"".join(content))
 
 
-def background_download() -> bool:
+async def background_download(pip_done: trio.Event) -> bool:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
@@ -69,16 +71,17 @@ def background_download() -> bool:
         except KeyError:
             pass
 
+    # XXX download async: https://www.python-httpx.org/async/
     with httpx.stream(http_verb, PYZ_URL, headers=headers) as response:
         # XXX handle errors
 
         if response.status_code == 304:
-            print("No new pip version available.")
             return False
 
         headers_cache.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
 
         content = []
+        printed_separator = False
         total = int(response.headers["Content-Length"])
 
         with rich.progress.Progress(
@@ -87,12 +90,24 @@ def background_download() -> bool:
             rich.progress.DownloadColumn(),
             rich.progress.TransferSpeedColumn(),
         ) as progress:
-            download_task = progress.add_task(f"Download", total=total)
+            download_task = progress.add_task(
+                f"Download", total=total, visible=pip_done.is_set()
+            )
             for chunk in response.iter_bytes():
                 content.append(chunk)
-                progress.update(download_task, completed=response.num_bytes_downloaded)
+                if not printed_separator and pip_done.is_set():
+                    rich.console.Console().rule("updating pip")
+                    printed_separator = True
+                progress.update(
+                    download_task,
+                    completed=response.num_bytes_downloaded,
+                    visible=pip_done.is_set(),
+                )
 
     CACHED_PYZ.write_bytes(b"".join(content))
+    if pip_done.is_set():
+        # XXX error condition
+        print_pip_version()
     return True
 
 
@@ -105,11 +120,21 @@ def create_venv(path: pathlib.Path) -> pathlib.Path:
     return path / ".venv" / "bin" / "python"
 
 
-def pip(py_path: pathlib.Path, pyz_path: pathlib.Path, args: List[str]) -> int:
+async def pip(
+    py_path: pathlib.Path,
+    args: List[str],
+    *,
+    exit: trio.MemorySendChannel,
+    done: trio.Event,
+) -> int:
     args = ["--disable-pip-version-check", "--require-virtualenv", *args]
-    return subprocess.run(
-        [os.fsdecode(py_path), os.fsdecode(pyz_path), *args], check=False
-    ).returncode
+    with exit:
+        # XXX Execute asynchronously
+        exit_code = subprocess.run(
+            [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
+        ).returncode
+        await exit.send(exit_code)
+        done.set()
 
 
 def print_pip_version() -> int:
@@ -127,12 +152,12 @@ def select_dir() -> pathlib.Path:
         if pyproject_toml.exists():
             break
     else:
-        # TODO: error condition
+        # XXX: error condition
         print("No pyproject.toml found.")
     return path
 
 
-def main():
+async def real_main():
     console = rich.console.Console()
     background_output = False
     downloaded_pyz = False
@@ -140,10 +165,10 @@ def main():
     if not CACHED_PYZ.exists():
         background_output = True
         console.rule("Download pip")
-        # TODO: error condition
+        # XXX: error condition
         blocking_download()
         downloaded_pyz = True
-        # TODO: error condition
+        # XXX: error condition
         print_pip_version()
 
     if in_virtual_env():
@@ -151,29 +176,34 @@ def main():
     else:
         background_output = True
         console.rule("Create virtual environment")
-        # TODO: error condition
+        # XXX: error condition
         workspace_path = select_dir()
         print("Creating virtual environment in", workspace_path)
-        # TODO: error condition
+        # XXX: error condition
         py_path = create_venv(workspace_path)
 
     if background_output:
         console.rule("pip output")
 
-    exit_code = pip(py_path, CACHED_PYZ, args=sys.argv[1:])
+    exit_code_send, exit_code_receive = trio.open_memory_channel(1)
+    pip_done = trio.Event()
 
-    if not downloaded_pyz:
-        # XXX Don't output unless pip was updated.
-        console.rule("Update pip")
-        if background_download():
-            # XXX error condition
-            print_pip_version()
+    exec_pip = functools.partial(
+        pip, py_path, args=sys.argv[1:], exit=exit_code_send, done=pip_done
+    )
+    exec_download = functools.partial(background_download, pip_done)
 
-    # TODO: guarantee to exit with the same code as pip?
-    sys.exit(exit_code)
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(exec_pip)
+        if not downloaded_pyz:
+            nursery.start_soon(exec_download)
 
-    # TODO: asynchronously execute pip and check/download a new pip simultaneously.
-    # TODO: Only show download progress if still occurring after pip execution finishes.
+    with exit_code_receive:
+        sys.exit(await exit_code_receive.receive())
+
+
+def main():
+    trio.run(real_main)
 
 
 if __name__ == "__main__":
