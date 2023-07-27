@@ -24,15 +24,6 @@ def blocking_download() -> None:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
-    # headers = {}
-    # if headers_cache.exists():
-    #     last_headers = json.loads(headers_cache.read_text(encoding="utf-8"))
-    #     try:
-    #         # https://developer.mozilla.org/en-US/docs/Web/HTTP/Conditional_requests
-    #         headers["If-Modified-Since"] = last_headers["last-modified"]
-    #         headers["If-None-Match"] = last_headers["etag"]
-    #     except KeyError:
-    #         pass
 
     with httpx.stream(http_verb, PYZ_URL) as response:
         # XXX handle errors
@@ -71,8 +62,8 @@ async def background_download(pip_done: trio.Event) -> bool:
         except KeyError:
             pass
 
-    # XXX download async: https://www.python-httpx.org/async/
-    with httpx.stream(http_verb, PYZ_URL, headers=headers) as response:
+    client = httpx.AsyncClient()
+    async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
         # XXX handle errors
 
         if response.status_code == 304:
@@ -93,7 +84,7 @@ async def background_download(pip_done: trio.Event) -> bool:
             download_task = progress.add_task(
                 f"Download", total=total, visible=pip_done.is_set()
             )
-            for chunk in response.iter_bytes():
+            async for chunk in response.aiter_bytes():
                 content.append(chunk)
                 if not printed_separator and pip_done.is_set():
                     rich.console.Console().rule("updating pip")
@@ -104,10 +95,12 @@ async def background_download(pip_done: trio.Event) -> bool:
                     visible=pip_done.is_set(),
                 )
 
+    await pip_done.wait()
     CACHED_PYZ.write_bytes(b"".join(content))
-    if pip_done.is_set():
-        # XXX error condition
-        print_pip_version()
+    if not printed_separator:
+        rich.console.Console().rule("updating pip")
+    # XXX error condition
+    print_pip_version()
     return True
 
 
@@ -129,11 +122,10 @@ async def pip(
 ) -> int:
     args = ["--disable-pip-version-check", "--require-virtualenv", *args]
     with exit:
-        # XXX Execute asynchronously
-        exit_code = subprocess.run(
+        proc = await trio.run_process(
             [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
-        ).returncode
-        await exit.send(exit_code)
+        )
+        await exit.send(proc.returncode)
         done.set()
 
 
