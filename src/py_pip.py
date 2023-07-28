@@ -25,13 +25,16 @@ def blocking_download() -> None:
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
 
+    # TODO: log URL
     with httpx.stream(http_verb, PYZ_URL) as response:
         # XXX handle errors
 
+        # TODO: log
         headers_cache.parent.mkdir(parents=True, exist_ok=True)
         headers_cache.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
 
         content = []
+        # TODO: log
         total = int(response.headers["Content-Length"])
 
         with rich.progress.Progress(
@@ -45,6 +48,7 @@ def blocking_download() -> None:
                 content.append(chunk)
                 progress.update(download_task, completed=response.num_bytes_downloaded)
 
+    # TODO: log
     CACHED_PYZ.write_bytes(b"".join(content))
 
 
@@ -54,8 +58,10 @@ async def background_download(pip_done: trio.Event) -> bool:
     headers_cache = CACHE_DIR / "response_headers.json"
     headers = {}
     if headers_cache.exists():
+        # TODO: log
         last_headers = json.loads(headers_cache.read_text(encoding="utf-8"))
         try:
+            # TODO: log
             # https://developer.mozilla.org/en-US/docs/Web/HTTP/Conditional_requests
             headers["If-Modified-Since"] = last_headers["last-modified"]
             headers["If-None-Match"] = last_headers["etag"]
@@ -63,16 +69,20 @@ async def background_download(pip_done: trio.Event) -> bool:
             pass
 
     client = httpx.AsyncClient()
+    # TODO: log
     async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
         # XXX handle errors
 
         if response.status_code == 304:
+            # TODO: log
             return False
 
+        # TODO: log
         headers_cache.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
 
         content = []
         printed_separator = False
+        # TODO: log
         total = int(response.headers["Content-Length"])
 
         with rich.progress.Progress(
@@ -96,6 +106,7 @@ async def background_download(pip_done: trio.Event) -> bool:
                 )
 
     await pip_done.wait()
+    # TODO: log
     CACHED_PYZ.write_bytes(b"".join(content))
     if not printed_separator:
         rich.console.Console().rule("updating pip")
@@ -109,6 +120,7 @@ def in_virtual_env() -> bool:
 
 
 def create_venv(path: pathlib.Path) -> pathlib.Path:
+    # TODO: log
     microvenv.create(path / ".venv")
     return path / ".venv" / "bin" / "python"
 
@@ -122,6 +134,7 @@ async def pip(
 ) -> int:
     args = ["--disable-pip-version-check", "--require-virtualenv", *args]
     with exit:
+        # TODO: log
         proc = await trio.run_process(
             [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
         )
@@ -131,6 +144,7 @@ async def pip(
 
 def print_pip_version() -> int:
     args = ["--disable-pip-version-check", "--version"]
+    # TODO: log
     return subprocess.run(
         [sys.executable, os.fsdecode(CACHED_PYZ), *args], check=False
     ).returncode
@@ -140,12 +154,15 @@ def select_dir() -> pathlib.Path:
     cwd = pathlib.Path.cwd()
     locations = [cwd, *cwd.parents]
     for path in locations:
+        # TODO: log
         pyproject_toml = path / "pyproject.toml"
         if pyproject_toml.exists():
+            # TODO: log
             break
     else:
         # XXX: error condition
-        print("No pyproject.toml found.")
+        # TODO: log
+        raise FileNotFoundError("No pyproject.toml found.")
     return path
 
 
@@ -155,6 +172,7 @@ async def real_main():
     downloaded_pyz = False
 
     if not CACHED_PYZ.exists():
+        # TODO: log
         background_output = True
         console.rule("Download pip")
         # XXX: error condition
@@ -164,6 +182,7 @@ async def real_main():
         print_pip_version()
 
     if in_virtual_env():
+        # TODO: log
         py_path = pathlib.Path(sys.executable)
     else:
         background_output = True
@@ -191,7 +210,9 @@ async def real_main():
             nursery.start_soon(exec_download)
 
     with exit_code_receive:
-        sys.exit(await exit_code_receive.receive())
+        exit_code = await exit_code_receive.receive()
+        # TODO: log
+        sys.exit(exit_code)
 
 
 def main():
