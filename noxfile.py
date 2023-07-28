@@ -104,6 +104,13 @@ def build(session):
     )
 
 
+@nox.session(python=False)
+def install(session):
+    local_bin = pathlib.Path.home() / ".local" / "bin"
+    build(session)
+    shutil.copy(WORKSPACE / "dist" / "py-pip.pyz", local_bin)
+
+
 @nox.session(python=MIN_PYTHON_VERSION)
 def lock(session):
     """Update the lock file (and recreate the virtual environment)."""
