@@ -20,6 +20,65 @@ CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
 CACHED_PYZ = CACHE_DIR / "pip.pyz"
 
 
+def failure(message: str, /) -> None:
+    """Print a failure message and exit."""
+    console = rich.console.Console()
+    console.print(f"[bold red]Error:[/bold red] {message}")
+    sys.exit(1)
+
+
+def in_virtual_env() -> bool:
+    return sys.prefix != sys.base_prefix
+
+
+def select_dir() -> pathlib.Path:
+    cwd = pathlib.Path.cwd()
+    locations = [cwd, *cwd.parents]
+    for path in locations:
+        # TODO: log
+        pyproject_toml = path / "pyproject.toml"
+        if pyproject_toml.exists():
+            # TODO: log
+            break
+    else:
+        failure("No pyproject.toml found.")
+    return path
+
+
+def create_venv(path: pathlib.Path) -> pathlib.Path:
+    # TODO: log
+    try:
+        microvenv.create(path / ".venv")
+    except OSError as exc:
+        failure(str(exc))
+    return path / ".venv" / "bin" / "python"
+
+
+def print_pip_version() -> int:
+    args = ["--disable-pip-version-check", "--version"]
+    # TODO: log
+    proc = subprocess.run([sys.executable, os.fsdecode(CACHED_PYZ), *args], check=False)
+    if proc.returncode != 0:
+        failure(f"pip --version returned {proc.returncode}")
+
+
+async def pip(
+    py_path: pathlib.Path,
+    args: List[str],
+    *,
+    exit: trio.MemorySendChannel,
+    done: trio.Event,
+) -> int:
+    args = ["--disable-pip-version-check", "--require-virtualenv", *args]
+    with exit:
+        # TODO: log
+        proc = await trio.run_process(
+            [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
+        )
+        await exit.send(proc.returncode)
+        done.set()
+
+
 def blocking_download() -> None:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
@@ -27,7 +86,8 @@ def blocking_download() -> None:
 
     # TODO: log URL
     with httpx.stream(http_verb, PYZ_URL) as response:
-        # XXX handle errors
+        if response.status_code != 200:
+            failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
 
         # TODO: log
         headers_cache.parent.mkdir(parents=True, exist_ok=True)
@@ -71,99 +131,50 @@ async def background_download(pip_done: trio.Event) -> bool:
     client = httpx.AsyncClient()
     # TODO: log
     async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
-        # XXX handle errors
+        content = []
 
         if response.status_code == 304:
             # TODO: log
             return False
-
-        # TODO: log
-        headers_cache.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
-
-        content = []
-        printed_separator = False
-        # TODO: log
-        total = int(response.headers["Content-Length"])
-
-        with rich.progress.Progress(
-            "[progress.percentage]{task.percentage:>3.0f}%",
-            rich.progress.BarColumn(bar_width=None),
-            rich.progress.DownloadColumn(),
-            rich.progress.TransferSpeedColumn(),
-        ) as progress:
-            download_task = progress.add_task(
-                f"Download", total=total, visible=pip_done.is_set()
+        elif response.status_code == 200:
+            # TODO: log
+            headers_cache.write_text(
+                json.dumps(dict(response.headers)), encoding="utf-8"
             )
-            async for chunk in response.aiter_bytes():
-                content.append(chunk)
-                if not printed_separator and pip_done.is_set():
-                    rich.console.Console().rule("updating pip")
-                    printed_separator = True
-                progress.update(
-                    download_task,
-                    completed=response.num_bytes_downloaded,
-                    visible=pip_done.is_set(),
+            printed_separator = False
+            # TODO: log
+            total = int(response.headers["Content-Length"])
+
+            with rich.progress.Progress(
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                rich.progress.BarColumn(bar_width=None),
+                rich.progress.DownloadColumn(),
+                rich.progress.TransferSpeedColumn(),
+            ) as progress:
+                download_task = progress.add_task(
+                    f"Download", total=total, visible=pip_done.is_set()
                 )
+                async for chunk in response.aiter_bytes():
+                    content.append(chunk)
+                    if not printed_separator and pip_done.is_set():
+                        rich.console.Console().rule("updating pip")
+                        printed_separator = True
+                    progress.update(
+                        download_task,
+                        completed=response.num_bytes_downloaded,
+                        visible=pip_done.is_set(),
+                    )
 
     await pip_done.wait()
-    # TODO: log
-    CACHED_PYZ.write_bytes(b"".join(content))
     if not printed_separator:
         rich.console.Console().rule("updating pip")
-    # XXX error condition
+    if not content:
+        failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
+    else:
+        # TODO: log
+        CACHED_PYZ.write_bytes(b"".join(content))
     print_pip_version()
     return True
-
-
-def in_virtual_env() -> bool:
-    return sys.prefix != sys.base_prefix
-
-
-def create_venv(path: pathlib.Path) -> pathlib.Path:
-    # TODO: log
-    microvenv.create(path / ".venv")
-    return path / ".venv" / "bin" / "python"
-
-
-async def pip(
-    py_path: pathlib.Path,
-    args: List[str],
-    *,
-    exit: trio.MemorySendChannel,
-    done: trio.Event,
-) -> int:
-    args = ["--disable-pip-version-check", "--require-virtualenv", *args]
-    with exit:
-        # TODO: log
-        proc = await trio.run_process(
-            [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
-        )
-        await exit.send(proc.returncode)
-        done.set()
-
-
-def print_pip_version() -> int:
-    args = ["--disable-pip-version-check", "--version"]
-    # TODO: log
-    return subprocess.run(
-        [sys.executable, os.fsdecode(CACHED_PYZ), *args], check=False
-    ).returncode
-
-
-def select_dir() -> pathlib.Path:
-    cwd = pathlib.Path.cwd()
-    locations = [cwd, *cwd.parents]
-    for path in locations:
-        # TODO: log
-        pyproject_toml = path / "pyproject.toml"
-        if pyproject_toml.exists():
-            # TODO: log
-            break
-    else:
-        # XXX: error condition
-        # TODO: log
-        raise FileNotFoundError("No pyproject.toml found.")
-    return path
 
 
 async def real_main():
@@ -175,10 +186,8 @@ async def real_main():
         # TODO: log
         background_output = True
         console.rule("Download pip")
-        # XXX: error condition
         blocking_download()
         downloaded_pyz = True
-        # XXX: error condition
         print_pip_version()
 
     if in_virtual_env():
@@ -187,10 +196,8 @@ async def real_main():
     else:
         background_output = True
         console.rule("Create virtual environment")
-        # XXX: error condition
         workspace_path = select_dir()
         print("Creating virtual environment in", workspace_path)
-        # XXX: error condition
         py_path = create_venv(workspace_path)
 
     if background_output:
