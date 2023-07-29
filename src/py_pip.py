@@ -18,11 +18,18 @@ import xdg
 
 
 LOGGER = structlog.get_logger()
+_LOG_LEVELS = [logging.ERROR, logging.INFO, logging.DEBUG]
+_LOGGING_LEVEL = os.getenv("PY_PIP_DEBUG") or 0
+_MAX_LOG_LEVEL = len(_LOG_LEVELS) - 1
+try:
+    _LOGGING_LEVEL = max(min(int(_LOGGING_LEVEL), _MAX_LOG_LEVEL), 0)
+except ValueError:
+    _LOGGING_LEVEL = _MAX_LOG_LEVEL
+_CHOSEN_lOG_LEVEL = _LOG_LEVELS[_LOGGING_LEVEL]
 structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(
-        logging.DEBUG if os.getenv("PY_PIP_DEBUG") else logging.WARNING
-    )
+    wrapper_class=structlog.make_filtering_bound_logger(_CHOSEN_lOG_LEVEL)
 )
+del _LOG_LEVELS, _LOGGING_LEVEL, _CHOSEN_lOG_LEVEL, _MAX_LOG_LEVEL
 PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
 CACHED_PYZ = CACHE_DIR / "pip.pyz"
