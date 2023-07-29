@@ -1,5 +1,6 @@
 import functools
 import json
+import logging
 import os
 import pathlib
 import subprocess
@@ -11,10 +12,17 @@ import microvenv
 import rich.console
 import rich.progress
 import rich.prompt
+import structlog
 import trio
 import xdg
 
 
+LOGGER = structlog.get_logger()
+structlog.configure(
+    wrapper_class=structlog.make_filtering_bound_logger(
+        logging.DEBUG if os.getenv("PY_PIP_DEBUG") else logging.WARNING
+    )
+)
 PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
 CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
 CACHED_PYZ = CACHE_DIR / "pip.pyz"
@@ -35,10 +43,10 @@ def select_dir() -> pathlib.Path:
     cwd = pathlib.Path.cwd()
     locations = [cwd, *cwd.parents]
     for path in locations:
-        # TODO: log
+        LOGGER.debug("checking for pyproject.toml", path=path)
         pyproject_toml = path / "pyproject.toml"
         if pyproject_toml.exists():
-            # TODO: log
+            LOGGER.info("found pyproject.toml", path=path)
             break
     else:
         failure("No pyproject.toml found.")
@@ -46,19 +54,29 @@ def select_dir() -> pathlib.Path:
 
 
 def create_venv(path: pathlib.Path) -> pathlib.Path:
-    # TODO: log
+    venv_path = path / ".venv"
     try:
-        microvenv.create(path / ".venv")
+        microvenv.create()
+        LOGGER.info("created virtual environment", path=venv_path)
     except OSError as exc:
         failure(str(exc))
     return path / ".venv" / "bin" / "python"
 
 
 def print_pip_version() -> int:
+    executable = sys.executable
+    pip_path = os.fsdecode(CACHED_PYZ)
     args = ["--disable-pip-version-check", "--version"]
-    # TODO: log
-    proc = subprocess.run([sys.executable, os.fsdecode(CACHED_PYZ), *args], check=False)
-    if proc.returncode != 0:
+    proc = subprocess.run([executable, pip_path, *args], check=False)
+    return_code = proc.returncode
+    LOGGER.info(
+        "pip version",
+        executable=executable,
+        pip=pip_path,
+        args=args,
+        return_code=return_code,
+    )
+    if return_code != 0:
         failure(f"pip --version returned {proc.returncode}")
 
 
@@ -70,12 +88,19 @@ async def pip(
     done: trio.Event,
 ) -> int:
     args = ["--disable-pip-version-check", "--require-virtualenv", *args]
+    executable = os.fsdecode(py_path)
+    pip_path = os.fsdecode(CACHED_PYZ)
     with exit:
-        # TODO: log
-        proc = await trio.run_process(
-            [os.fsdecode(py_path), os.fsdecode(CACHED_PYZ), *args], check=False
+        proc = await trio.run_process([executable, pip_path, *args], check=False)
+        return_code = proc.returncode
+        LOGGER.info(
+            "executed pip",
+            executable=executable,
+            pip=pip_path,
+            args=args,
+            return_code=return_code,
         )
-        await exit.send(proc.returncode)
+        await exit.send(return_code)
         done.set()
 
 
@@ -84,17 +109,25 @@ def blocking_download() -> None:
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
 
-    # TODO: log URL
     with httpx.stream(http_verb, PYZ_URL) as response:
-        if response.status_code != 200:
-            failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
+        status_code = response.status_code
+        headers = dict(response.headers)
+        LOGGER.info(
+            "downloading pip",
+            verb=http_verb,
+            url=PYZ_URL,
+            headers=headers,
+            status=status_code,
+        )
+        if status_code != 200:
+            failure(f"{http_verb} {PYZ_URL} returned {status_code}")
 
-        # TODO: log
+        LOGGER.info("creating directories", path=headers_cache.parent)
         headers_cache.parent.mkdir(parents=True, exist_ok=True)
-        headers_cache.write_text(json.dumps(dict(response.headers)), encoding="utf-8")
+        LOGGER.info("writing headers", path=headers_cache, headers=headers)
+        headers_cache.write_text(json.dumps(headers), encoding="utf-8")
 
         content = []
-        # TODO: log
         total = int(response.headers["Content-Length"])
 
         with rich.progress.Progress(
@@ -108,8 +141,9 @@ def blocking_download() -> None:
                 content.append(chunk)
                 progress.update(download_task, completed=response.num_bytes_downloaded)
 
-    # TODO: log
-    CACHED_PYZ.write_bytes(b"".join(content))
+    total_contents = b"".join(content)
+    LOGGER.info("writing pip", path=CACHED_PYZ, size=len(total_contents))
+    CACHED_PYZ.write_bytes(total_contents)
 
 
 async def background_download(pip_done: trio.Event) -> bool:
@@ -118,10 +152,9 @@ async def background_download(pip_done: trio.Event) -> bool:
     headers_cache = CACHE_DIR / "response_headers.json"
     headers = {}
     if headers_cache.exists():
-        # TODO: log
+        LOGGER.info("reading headers", path=headers_cache)
         last_headers = json.loads(headers_cache.read_text(encoding="utf-8"))
         try:
-            # TODO: log
             # https://developer.mozilla.org/en-US/docs/Web/HTTP/Conditional_requests
             headers["If-Modified-Since"] = last_headers["last-modified"]
             headers["If-None-Match"] = last_headers["etag"]
@@ -129,20 +162,26 @@ async def background_download(pip_done: trio.Event) -> bool:
             pass
 
     client = httpx.AsyncClient()
-    # TODO: log
     async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
+        status_code = response.status_code
+        response_headers = dict(response.headers)
+        LOGGER.info(
+            "downloading pip asynchronously",
+            verb=http_verb,
+            url=PYZ_URL,
+            response=response_headers,
+            status=status_code,
+        )
+
         content = []
 
-        if response.status_code == 304:
-            # TODO: log
+        if status_code == 304:
+            LOGGER.debug("pip is up to date")
             return False
-        elif response.status_code == 200:
-            # TODO: log
-            headers_cache.write_text(
-                json.dumps(dict(response.headers)), encoding="utf-8"
-            )
+        elif status_code == 200:
+            LOGGER.info("caching headers", path=headers_cache)
+            headers_cache.write_text(json.dumps(response_headers), encoding="utf-8")
             printed_separator = False
-            # TODO: log
             total = int(response.headers["Content-Length"])
 
             with rich.progress.Progress(
@@ -171,7 +210,7 @@ async def background_download(pip_done: trio.Event) -> bool:
     if not content:
         failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
     else:
-        # TODO: log
+        LOGGER.info("writing pip", path=CACHED_PYZ, size=len(content))
         CACHED_PYZ.write_bytes(b"".join(content))
     print_pip_version()
     return True
@@ -183,7 +222,7 @@ async def real_main():
     downloaded_pyz = False
 
     if not CACHED_PYZ.exists():
-        # TODO: log
+        LOGGER.debug("pip.pyz does not exist")
         background_output = True
         console.rule("Download pip")
         blocking_download()
@@ -191,7 +230,7 @@ async def real_main():
         print_pip_version()
 
     if in_virtual_env():
-        # TODO: log
+        LOGGER.debug("in virtual environment")
         py_path = pathlib.Path(sys.executable)
     else:
         background_output = True
@@ -218,7 +257,7 @@ async def real_main():
 
     with exit_code_receive:
         exit_code = await exit_code_receive.receive()
-        # TODO: log
+        LOGGER.debug("exit code", exit_code=exit_code)
         sys.exit(exit_code)
 
 
