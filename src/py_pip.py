@@ -19,7 +19,7 @@ import xdg
 
 LOGGER = structlog.get_logger()
 _LOG_LEVELS = [logging.ERROR, logging.INFO, logging.DEBUG]
-_LOGGING_LEVEL = os.getenv("PY_PIP_DEBUG") or 0
+_LOGGING_LEVEL = os.environ.get("PY_PIP_DEBUG") or 0
 _MAX_LOG_LEVEL = len(_LOG_LEVELS) - 1
 try:
     _LOGGING_LEVEL = max(min(int(_LOGGING_LEVEL), _MAX_LOG_LEVEL), 0)
@@ -223,7 +223,7 @@ async def background_download(pip_done: trio.Event) -> bool:
     return True
 
 
-async def real_main():
+async def real_main(args: List[str]):
     console = rich.console.Console()
     background_output = False
     downloaded_pyz = False
@@ -268,8 +268,8 @@ async def real_main():
         sys.exit(exit_code)
 
 
-def main():
-    trio.run(real_main)
+def main(args: List[str] = sys.argv[1:]) -> None:
+    trio.run(real_main, args)
 
 
 if __name__ == "__main__":

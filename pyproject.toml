@@ -1,12 +1,10 @@
 [project]
 name = "py-pip"
 version = "2023.0.0"
+classifiers = ["Private :: Do Not Upload"]
 requires-python = ">=3.8"
 # xdg has been renamed to xdg-base-dirs, but it requires >= 3.10.
 dependencies = ["httpx", "microvenv", "rich", "structlog", "trio", "xdg"]
-
-classifiers = ["Private :: Do Not Upload"]
-
 
 [tool.pip-tools]
 pip-args = "--only-binary :all:"
