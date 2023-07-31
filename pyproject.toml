@@ -6,6 +6,10 @@ requires-python = ">=3.8"
 # xdg has been renamed to xdg-base-dirs, but it requires >= 3.10.
 dependencies = ["httpx", "microvenv", "rich", "structlog", "trio", "xdg"]
 
+[project.optional-dependencies]
+
+test = ["pytest"]
+
 [tool.pip-tools]
 pip-args = "--only-binary :all:"
 generate-hashes = true

@@ -9,10 +9,14 @@ WORKSPACE = pathlib.Path(__file__).parent
 LOCK_FILE = WORKSPACE / "requirements.txt"
 
 
+def read_pyproject():
+    with open(WORKSPACE / "pyproject.toml", "rb") as file:
+        return tomllib.load(file)
+
+
 def min_python_version() -> str:
     """Calculate the minimum Python version that is supported."""
-    with open(WORKSPACE / "pyproject.toml", "rb") as file:
-        pyproject = tomllib.load(file)
+    pyproject = read_pyproject()
     return pyproject["project"]["requires-python"].removeprefix(">=").strip()
 
 
@@ -133,5 +137,6 @@ def lock(session):
 def test(session):
     """Run the tests."""
     build(session)
-    session.install("pytest")
-    session.run("pytest", "tests.py")
+    pyproject = read_pyproject()
+    session.install(*pyproject["project"]["optional-dependencies"]["test"])
+    session.run("pytest", ".")
