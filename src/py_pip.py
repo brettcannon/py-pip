@@ -47,6 +47,7 @@ def in_virtual_env() -> bool:
 
 
 def select_dir() -> pathlib.Path:
+    """Find the (parent) directory with a `pyproject.toml` file."""
     cwd = pathlib.Path.cwd()
     locations = [cwd, *cwd.parents]
     for path in locations:
@@ -71,6 +72,7 @@ def create_venv(path: pathlib.Path) -> pathlib.Path:
 
 
 def print_pip_version() -> int:
+    """Print the version of `pip.pyz` and return the exit code."""
     executable = sys.executable
     pip_path = os.fsdecode(CACHED_PYZ)
     args = ["--disable-pip-version-check", "--version"]
@@ -94,6 +96,11 @@ async def pip(
     exit: trio.MemorySendChannel,
     done: trio.Event,
 ) -> int:
+    """Execute `pip.pyz`.
+
+    Completion of execution is signaled via setting `done`. The exit code is
+    communicated via `exit`.
+    """
     args = ["--disable-pip-version-check", "--require-virtualenv", *args]
     executable = os.fsdecode(py_path)
     pip_path = os.fsdecode(CACHED_PYZ)
@@ -112,6 +119,7 @@ async def pip(
 
 
 def blocking_download() -> None:
+    """Actively download `pip.pyz`."""
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
@@ -154,6 +162,11 @@ def blocking_download() -> None:
 
 
 async def background_download(pip_done: trio.Event) -> bool:
+    """Download `pip.pyz`, if necessary, in the background.
+
+    Download progress is only displayed if/when `pip_done` is set. If there's any update
+    to pip then its version will be printed once pip is done executing.
+    """
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
@@ -218,6 +231,7 @@ async def background_download(pip_done: trio.Event) -> bool:
         failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
     else:
         LOGGER.info("writing pip", path=CACHED_PYZ, size=len(content))
+        # Don't overwrite `pip.pyz` until pip is done executing.
         CACHED_PYZ.write_bytes(b"".join(content))
     print_pip_version()
     return True
@@ -269,6 +283,7 @@ async def real_main(args: List[str]):
 
 
 def main(args: List[str] = sys.argv[1:]) -> None:
+    """Synchronous wrapper for real_main()."""
     trio.run(real_main, args)
 
 

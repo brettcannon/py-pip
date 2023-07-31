@@ -12,6 +12,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def download_cache(tmp_path_factory):
+    """Create a directory to store `pip.pyz` and the response headers."""
     cache_dir = tmp_path_factory.mktemp("download-cache")
     response = urllib.request.urlopen("https://bootstrap.pypa.io/pip/pip.pyz")
     headers = dict(response.getheaders())
@@ -22,6 +23,7 @@ def download_cache(tmp_path_factory):
 
 @pytest.fixture
 def py_pip_cache(download_cache, tmp_path):
+    """Create an XDG cache directory and a `py-pip` subdirectory."""
     xdg_cache_dir = tmp_path / "xdg-cache-home"
     cache_dir = xdg_cache_dir / "py-pip"
     cache_dir.mkdir(parents=True)
@@ -37,6 +39,8 @@ def py_pip_cache(download_cache, tmp_path):
 
 @pytest.fixture
 def py_pip(py_pip_cache):
+    """Run `py-pip.pyz`."""
+
     def runner(*args):
         executable = sys.executable
         pyz_path = pathlib.Path(__file__).parent / "dist" / "py-pip.pyz"
@@ -68,6 +72,7 @@ def test_updating_pip():
 
 
 def test_pip_runs(py_pip):
+    """Output of `py-pip.pyz --version` should match `pip --version`."""
     proc = py_pip("--version")
 
     # There should be no output other than `pip --version`.
