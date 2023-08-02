@@ -51,9 +51,31 @@ def py_pip(py_pip_cache):
     return runner
 
 
-def test_no_pyz():
-    # XXX `pip.pyz` missing
-    pass
+@pytest.fixture
+def quick_pip_check(py_pip):
+    """Quick check against `pip --version`."""
+
+    def runner():
+        proc = py_pip("--version")
+
+        # There should be no output other than `pip --version`.
+        assert re.search(r"^pip \d+\.\d+\.\d+ from", proc.stdout, flags=re.MULTILINE)
+        assert not proc.stderr
+
+    return runner
+
+
+def test_no_pyz(py_pip_cache, quick_pip_check):
+    """`pip.pyz` should be downloaded if it's missing."""
+    pyz_path = py_pip_cache / "pip.pyz"
+    pyz_path.unlink()
+
+    quick_pip_check()
+
+    cache_contents = {path.name for path in py_pip_cache.iterdir()}
+    assert len(cache_contents) == 2
+    assert "pip.pyz" in cache_contents
+    assert "response_headers.json" in cache_contents
 
 
 def test_need_venv_no_pyproject():
@@ -66,15 +88,21 @@ def test_need_venv_found_pyproject():
     pass
 
 
-def test_updating_pip():
-    # XXX pip needs updating
-    pass
+def test_updating_pip(py_pip_cache, quick_pip_check):
+    """Download `pip.pyz` if the file is out of date."""
+    header_path = py_pip_cache / "response_headers.json"
+    original_headers = json.loads(header_path.read_text(encoding="utf-8"))
+    bad_headers = original_headers.copy()
+    bad_headers["etag"] = "bad"
+    header_path.write_text(json.dumps(bad_headers), encoding="utf-8")
+
+    quick_pip_check()
+
+    new_headers = json.loads(header_path.read_text(encoding="utf-8"))
+    assert new_headers["etag"] == original_headers["etag"]
+    assert new_headers["last-modified"] == original_headers["last-modified"]
 
 
-def test_pip_runs(py_pip):
+def test_pip_runs(quick_pip_check):
     """Output of `py-pip.pyz --version` should match `pip --version`."""
-    proc = py_pip("--version")
-
-    # There should be no output other than `pip --version`.
-    assert re.match(r"pip \d+\.\d+\.\d+ from", proc.stdout)
-    assert not proc.stderr
+    quick_pip_check()

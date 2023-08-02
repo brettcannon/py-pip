@@ -123,7 +123,10 @@ def blocking_download() -> None:
     # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
-
+    # Save file to a unique name to avoid multiple processes trampling on each other.
+    # This isn't done to an exclusive file to allow all processes to start executing pip
+    # ASAP (i.e., wasted download for faster pip start time).
+    download_path = CACHED_PYZ.with_suffix(f".temp-{os.getpid()}")
     with httpx.stream(http_verb, PYZ_URL) as response:
         status_code = response.status_code
         headers = dict(response.headers)
@@ -137,12 +140,9 @@ def blocking_download() -> None:
         if status_code != 200:
             failure(f"{http_verb} {PYZ_URL} returned {status_code}")
 
-        LOGGER.info("creating directories", path=headers_cache.parent)
-        headers_cache.parent.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("writing headers", path=headers_cache, headers=headers)
-        headers_cache.write_text(json.dumps(headers), encoding="utf-8")
+        LOGGER.info("creating directories", path=CACHED_PYZ.parent)
+        CACHED_PYZ.parent.mkdir(parents=True, exist_ok=True)
 
-        content = []
         total = int(response.headers["Content-Length"])
 
         with rich.progress.Progress(
@@ -152,13 +152,20 @@ def blocking_download() -> None:
             rich.progress.TransferSpeedColumn(),
         ) as progress:
             download_task = progress.add_task(f"Download", total=total)
-            for chunk in response.iter_bytes():
-                content.append(chunk)
-                progress.update(download_task, completed=response.num_bytes_downloaded)
+            with download_path.open("wb") as file:
+                for chunk in response.iter_bytes():
+                    file.write(chunk)
+                    progress.update(
+                        download_task, completed=response.num_bytes_downloaded
+                    )
 
-    total_contents = b"".join(content)
-    LOGGER.info("writing pip", path=CACHED_PYZ, size=len(total_contents))
-    CACHED_PYZ.write_bytes(total_contents)
+    # Atomically create `pip.pyz`.
+    # This avoids multiple processes having a race condition in writing to the file.
+    LOGGER.info("replacing pip", src=download_path, dest=CACHED_PYZ)
+    os.replace(download_path, CACHED_PYZ)
+
+    LOGGER.info("writing response headers", path=headers_cache)
+    headers_cache.write_text(json.dumps(headers), encoding="utf-8")
 
 
 async def background_download(pip_done: trio.Event) -> bool:
@@ -181,58 +188,64 @@ async def background_download(pip_done: trio.Event) -> bool:
         except KeyError:
             pass
 
-    client = httpx.AsyncClient()
-    async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
-        status_code = response.status_code
-        response_headers = dict(response.headers)
-        LOGGER.info(
-            "downloading pip asynchronously",
-            verb=http_verb,
-            url=PYZ_URL,
-            response=response_headers,
-            status=status_code,
-        )
-
-        content = []
-
-        if status_code == 304:
-            LOGGER.debug("pip is up to date")
-            return False
-        elif status_code == 200:
-            LOGGER.info("caching headers", path=headers_cache)
-            headers_cache.write_text(json.dumps(response_headers), encoding="utf-8")
-            printed_separator = False
-            total = int(response.headers["Content-Length"])
-
-            with rich.progress.Progress(
-                "[progress.percentage]{task.percentage:>3.0f}%",
-                rich.progress.BarColumn(bar_width=None),
-                rich.progress.DownloadColumn(),
-                rich.progress.TransferSpeedColumn(),
-            ) as progress:
-                download_task = progress.add_task(
-                    f"Download", total=total, visible=pip_done.is_set()
+    download_path = CACHED_PYZ.with_suffix(f".download")
+    try:
+        file = download_path.open("xb")
+    except FileExistsError:
+        LOGGER.debug("pip.pyz is already being downloaded")
+        return False
+    else:
+        with file:
+            client = httpx.AsyncClient()
+            async with client.stream(http_verb, PYZ_URL, headers=headers) as response:
+                status_code = response.status_code
+                response_headers = dict(response.headers)
+                LOGGER.info(
+                    "downloading pip asynchronously",
+                    verb=http_verb,
+                    url=PYZ_URL,
+                    response=response_headers,
+                    status=status_code,
                 )
-                async for chunk in response.aiter_bytes():
-                    content.append(chunk)
-                    if not printed_separator and pip_done.is_set():
-                        rich.console.Console().rule("updating pip")
-                        printed_separator = True
-                    progress.update(
-                        download_task,
-                        completed=response.num_bytes_downloaded,
-                        visible=pip_done.is_set(),
-                    )
 
+                if status_code not in {200, 304}:
+                    failure(f"{http_verb} {PYZ_URL} returned {status_code}")
+                elif status_code == 304:
+                    LOGGER.debug("pip is up to date")
+                    return False
+                elif status_code == 200:
+                    printed_separator = False
+                    total = int(response.headers["Content-Length"])
+
+                    with rich.progress.Progress(
+                        "[progress.percentage]{task.percentage:>3.0f}%",
+                        rich.progress.BarColumn(bar_width=None),
+                        rich.progress.DownloadColumn(),
+                        rich.progress.TransferSpeedColumn(),
+                    ) as progress:
+                        download_task = progress.add_task(
+                            f"Download", total=total, visible=pip_done.is_set()
+                        )
+                        async for chunk in response.aiter_bytes():
+                            file.write(chunk)
+                            if not printed_separator and pip_done.is_set():
+                                rich.console.Console().rule("updating pip")
+                                printed_separator = True
+                            progress.update(
+                                download_task,
+                                completed=response.num_bytes_downloaded,
+                                visible=pip_done.is_set(),
+                            )
+
+    # Don't overwrite `pip.pyz` until pip is done executing.
     await pip_done.wait()
     if not printed_separator:
         rich.console.Console().rule("updating pip")
-    if not content:
-        failure(f"{http_verb} {PYZ_URL} returned {response.status_code}")
-    else:
-        LOGGER.info("writing pip", path=CACHED_PYZ, size=len(content))
-        # Don't overwrite `pip.pyz` until pip is done executing.
-        CACHED_PYZ.write_bytes(b"".join(content))
+    LOGGER.info("replacing pip", src=download_path, dest=CACHED_PYZ)
+    os.replace(download_path, CACHED_PYZ)
+    # Only cache the headers on a successful download/replacement.
+    LOGGER.info("caching headers", path=headers_cache)
+    headers_cache.write_text(json.dumps(response_headers), encoding="utf-8")
     print_pip_version()
     return True
 
