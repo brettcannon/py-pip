@@ -41,11 +41,10 @@ def py_pip_cache(download_cache, tmp_path):
 def py_pip(py_pip_cache):
     """Run `py-pip.pyz`."""
 
-    def runner(*args):
-        executable = sys.executable
+    def runner(*args, executable=sys.executable):
         pyz_path = pathlib.Path(__file__).parent / "dist" / "py-pip.pyz"
         return subprocess.run(
-            [executable, pyz_path, *args], capture_output=True, check=True, text=True
+            [executable, pyz_path, *args], capture_output=True, text=True
         )
 
     return runner
@@ -61,6 +60,7 @@ def quick_pip_check(py_pip):
         # There should be no output other than `pip --version`.
         assert re.search(r"^pip \d+\.\d+\.\d+ from", proc.stdout, flags=re.MULTILINE)
         assert not proc.stderr
+        assert not proc.returncode
 
     return runner
 
@@ -78,9 +78,16 @@ def test_no_pyz(py_pip_cache, quick_pip_check):
     assert "response_headers.json" in cache_contents
 
 
-def test_need_venv_no_pyproject():
-    # XXX not in a virtual environment; no `pyproject.toml`
-    pass
+def test_need_venv_no_pyproject(py_pip, tmp_path, monkeypatch):
+    # Confidence check.
+    assert not any(".venv" in frozenset(path.iterdir()) for path in tmp_path.iterdir())
+    monkeypatch.chdir(tmp_path)
+    # Python >=3.10; `strict` argument.
+    system_executable = os.path.realpath(sys.executable)
+    print(system_executable)
+    proc = py_pip("--version", executable=system_executable)
+
+    assert proc.returncode
 
 
 def test_need_venv_found_pyproject():
