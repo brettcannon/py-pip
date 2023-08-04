@@ -5,17 +5,16 @@ import os
 import pathlib
 import subprocess
 import sys
-from typing import List, Optional
+from typing import List
 
 import httpx
-import microvenv
+import microvenv  # type: ignore
 import rich.console
 import rich.progress
 import rich.prompt
 import structlog
 import trio
 import xdg
-
 
 LOGGER = structlog.get_logger()
 _LOG_LEVELS = [logging.ERROR, logging.INFO, logging.DEBUG]
@@ -71,7 +70,7 @@ def create_venv(path: pathlib.Path) -> pathlib.Path:
     return path / ".venv" / "bin" / "python"
 
 
-def print_pip_version() -> int:
+def print_pip_version() -> None:
     """Print the version of `pip.pyz` and return the exit code."""
     executable = sys.executable
     pip_path = os.fsdecode(CACHED_PYZ)
@@ -95,7 +94,7 @@ async def pip(
     *,
     exit: trio.MemorySendChannel,
     done: trio.Event,
-) -> int:
+) -> None:
     """Execute `pip.pyz`.
 
     Completion of execution is signaled via setting `done`. The exit code is
@@ -120,7 +119,7 @@ async def pip(
 
 def blocking_download() -> None:
     """Actively download `pip.pyz`."""
-    # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
+    # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress.
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
     # Save file to a unique name to avoid multiple processes trampling on each other.
@@ -151,7 +150,7 @@ def blocking_download() -> None:
             rich.progress.DownloadColumn(),
             rich.progress.TransferSpeedColumn(),
         ) as progress:
-            download_task = progress.add_task(f"Download", total=total)
+            download_task = progress.add_task("Download", total=total)
             with download_path.open("wb") as file:
                 for chunk in response.iter_bytes():
                     file.write(chunk)
@@ -174,7 +173,7 @@ async def background_download(pip_done: trio.Event) -> bool:
     Download progress is only displayed if/when `pip_done` is set. If there's any update
     to pip then its version will be printed once pip is done executing.
     """
-    # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress .
+    # (Mostly) from https://www.python-httpx.org/advanced/#monitoring-download-progress.
     http_verb = "GET"
     headers_cache = CACHE_DIR / "response_headers.json"
     headers = {}
@@ -188,7 +187,7 @@ async def background_download(pip_done: trio.Event) -> bool:
         except KeyError:
             pass
 
-    download_path = CACHED_PYZ.with_suffix(f".download")
+    download_path = CACHED_PYZ.with_suffix(".download")
     try:
         file = download_path.open("xb")
     except FileExistsError:
@@ -224,7 +223,7 @@ async def background_download(pip_done: trio.Event) -> bool:
                         rich.progress.TransferSpeedColumn(),
                     ) as progress:
                         download_task = progress.add_task(
-                            f"Download", total=total, visible=pip_done.is_set()
+                            "Download", total=total, visible=pip_done.is_set()
                         )
                         async for chunk in response.aiter_bytes():
                             file.write(chunk)
@@ -276,6 +275,8 @@ async def real_main(args: List[str]):
     if background_output:
         console.rule("pip output")
 
+    exit_code_send: trio.MemorySendChannel[int]
+    exit_code_receive: trio.MemoryReceiveChannel[int]
     exit_code_send, exit_code_receive = trio.open_memory_channel(1)
     pip_done = trio.Event()
 

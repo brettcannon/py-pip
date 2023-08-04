@@ -43,7 +43,7 @@ def install_deps(session, target, editable=False):
         "--require-hashes",
         "--no-deps",
         f"--target={target}",
-        f"-r",
+        "-r",
         LOCK_FILE,
     ]
 
@@ -140,3 +140,13 @@ def test(session):
     pyproject = read_pyproject()
     session.install(*pyproject["project"]["optional-dependencies"]["test"])
     session.run("pytest", ".")
+
+
+@nox.session
+def lint(session):
+    """Run the linters."""
+    session.install(".", "black", "mypy", "ruff", "trio-typing")
+    # Fastest to slowest.
+    session.run("ruff", "check", ".")
+    session.run("black", "--check", ".")
+    session.run("mypy", "src/py_pip.py")
