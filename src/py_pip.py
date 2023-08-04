@@ -64,7 +64,7 @@ def select_dir() -> pathlib.Path:
 def create_venv(path: pathlib.Path) -> pathlib.Path:
     venv_path = path / ".venv"
     try:
-        microvenv.create()
+        microvenv.create(venv_path)
         LOGGER.info("created virtual environment", path=venv_path)
     except OSError as exc:
         failure(str(exc))

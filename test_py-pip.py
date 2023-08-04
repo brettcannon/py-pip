@@ -79,20 +79,32 @@ def test_no_pyz(py_pip_cache, quick_pip_check):
 
 
 def test_need_venv_no_pyproject(py_pip, tmp_path, monkeypatch):
+    """If not running from a virtual environment and no `pyproject.toml`, fail."""
     # Confidence check.
     assert not any(".venv" in frozenset(path.iterdir()) for path in tmp_path.iterdir())
     monkeypatch.chdir(tmp_path)
     # Python >=3.10; `strict` argument.
     system_executable = os.path.realpath(sys.executable)
-    print(system_executable)
     proc = py_pip("--version", executable=system_executable)
 
     assert proc.returncode
 
 
-def test_need_venv_found_pyproject():
-    # XXX not in a virtual environment; `pyproject.toml` found
-    pass
+def test_need_venv_found_pyproject(py_pip, tmp_path, monkeypatch):
+    """If not running from a venv but `pyproject.toml` found, create venv."""
+    # Confidence check.
+    assert not (tmp_path / ".venv").exists()
+    (tmp_path / "pyproject.toml").write_text("# Nothing to see.", encoding="utf-8")
+    # Make sure we have to search parents to find `pyproject.toml`.
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    monkeypatch.chdir(subdir)
+
+    system_executable = os.path.realpath(sys.executable)
+    proc = py_pip("--version", executable=system_executable)
+
+    assert not proc.returncode
+    assert (tmp_path / ".venv").is_dir()
 
 
 def test_updating_pip(py_pip_cache, quick_pip_check):
