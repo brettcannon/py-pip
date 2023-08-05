@@ -7,6 +7,7 @@ import nox  # type: ignore
 
 WORKSPACE = pathlib.Path(__file__).parent
 LOCK_FILE = WORKSPACE / "requirements.txt"
+DIST_PYZ = WORKSPACE / "dist" / "py-pip.pyz"
 
 
 def read_pyproject():
@@ -84,25 +85,20 @@ def venv(session):
 def build(session):
     """Build `py-pip.pyz`."""
     build_path = WORKSPACE / "build"
-    dist_path = WORKSPACE / "dist"
-    for path in (build_path, dist_path):
+    for path in (build_path, DIST_PYZ):
         if path.exists():
             shutil.rmtree(path)
         path.mkdir()
 
     install_deps(session, build_path)
     next(build_path.glob("bdist.*")).rmdir()
-    # Keep the .dist-info directories for the licenses.
-    # XDG places its license in the wrong place (and with a misspelling).
-    (build_path / "LICENCE").rename(
-        next(build_path.glob("xdg-*.dist-info")) / "LICENSE"
-    )
+    # Note: keep the .dist-info directories for the licenses.
     shutil.copy(WORKSPACE / "LICENSE.md", build_path)
     shutil.copy(WORKSPACE / "NOTICE.md", build_path)
 
     zipapp.create_archive(
         build_path,
-        dist_path / "py-pip.pyz",
+        DIST_PYZ,
         interpreter="/usr/bin/env py",
         main="py_pip:main",
     )
@@ -112,7 +108,7 @@ def build(session):
 def install(session):
     local_bin = pathlib.Path.home() / ".local" / "bin"
     build(session)
-    shutil.copy(WORKSPACE / "dist" / "py-pip.pyz", local_bin)
+    shutil.copy(DIST_PYZ, local_bin)
 
 
 @nox.session(python=MIN_PYTHON_VERSION)
@@ -136,7 +132,13 @@ def lock(session):
 @nox.session(python=["3.8", "3.9", "3.10", "3.11", "3.12"])
 def test(session):
     """Run the tests."""
-    build(session)
+    pyz_mtime = DIST_PYZ.stat().st_mtime if DIST_PYZ.exists() else 0
+    input_files = {LOCK_FILE, WORKSPACE / "src" / "py_pip.py"}
+    if any(pyz_mtime < path.stat().st_mtime for path in input_files):
+        session.log("(Re)building `py_pip.pyz`")
+        build(session)
+    else:
+        session.debug("`py_pip.pyz` doesn't require a rebuild")
     pyproject = read_pyproject()
     session.install(*pyproject["project"]["optional-dependencies"]["test"])
     session.run("pytest", ".")

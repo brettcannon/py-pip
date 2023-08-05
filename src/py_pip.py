@@ -14,7 +14,17 @@ import rich.progress
 import rich.prompt
 import structlog
 import trio
-import xdg
+
+
+# https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
+def xdg_cache_home() -> pathlib.Path:
+    """Return the XDG cache home directory."""
+    env_var = os.environ.get("XDG_CACHE_HOME")
+    if env_var:
+        return pathlib.Path(env_var)
+    else:
+        return pathlib.Path.home() / ".cache"
+
 
 LOGGER = structlog.get_logger()
 _LOG_LEVELS = [logging.ERROR, logging.INFO, logging.DEBUG]
@@ -30,7 +40,7 @@ structlog.configure(
 )
 del _LOG_LEVELS, _LOGGING_LEVEL, _CHOSEN_lOG_LEVEL, _MAX_LOG_LEVEL
 PYZ_URL = "https://bootstrap.pypa.io/pip/pip.pyz"
-CACHE_DIR = xdg.xdg_cache_home() / "py-pip"
+CACHE_DIR = xdg_cache_home() / "py-pip"
 CACHED_PYZ = CACHE_DIR / "pip.pyz"
 
 
