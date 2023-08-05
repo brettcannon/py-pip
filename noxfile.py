@@ -85,7 +85,7 @@ def venv(session):
 def build(session):
     """Build `py-pip.pyz`."""
     build_path = WORKSPACE / "build"
-    for path in (build_path, DIST_PYZ):
+    for path in (build_path, DIST_PYZ.parent):
         if path.exists():
             shutil.rmtree(path)
         path.mkdir()
