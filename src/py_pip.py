@@ -66,7 +66,9 @@ def select_dir() -> pathlib.Path:
             LOGGER.info("found pyproject.toml", path=path)
             break
     else:
-        failure("No pyproject.toml found.")
+        failure(
+            "No pyproject.toml found; don't know where to create virtual environment"
+        )
     return path
 
 
